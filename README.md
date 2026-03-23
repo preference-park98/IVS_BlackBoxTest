@@ -1,89 +1,32 @@
-# IVS Black-Box Test Automation
+# IVS_BlackBoxTest
 
-## Overview
-This repository is a **Vector CANoe/CAPL-based black-box test automation project** for validating IVS diagnostic behavior.
-The project focuses on verifying whether diagnostic requirements are satisfied under boundary conditions by injecting CAN signals, requesting fault status, and checking detection, healing, and erase behavior without modifying internal ECU logic.
+## 파일별 설명 먼저 보기
+이 저장소는 여러 개의 CAPL 노드로 입력/요청 메시지를 생성하고, `tfs_IVS_Project.can`에서 이를 이용해 진단 테스트를 수행하는 구조로 되어 있습니다.
 
-In particular, this repository currently centers on battery-related diagnostic scenarios and organizes the test flow so that repetitive validation can be executed in a consistent and traceable way.
+### 1) `tfs_IVS_Project.can`
+이 저장소의 메인 테스트 파일입니다.
 
----
+- `MainTest()`에서 실행할 테스트케이스를 호출
+- `DTC_Clr()`로 fault clear 요청 전송
+- `Fault_Req()`로 fault status 요청 전송
+- `Battery_Percent_Low()`, `Battery_Charging_Error()` 테스트 포함
+- 실제 판정 로직과 timing/erase 검증이 들어 있는 핵심 파일
 
-## Project Goal
-The goal of this project is to automate validation of diagnostic requirements such as:
+### 2) `BMS.can`
+배터리 관련 입력을 송신하는 CAPL 노드입니다.
 
-- fault **non-detection** under normal conditions
-- fault **detection** under boundary and limit conditions
-- fault **healing** after recovery conditions are met
-- DTC **erase** after the specified ignition cycle condition
+- `BATT_01_10ms` 주기 송신
+- `Batt_Percent`, `Batt_Chg_Sts`, `Batt_Voltage` 제어
+- enable sysvar에 따라 시험값/기본값 전환
 
-Rather than checking only whether a fault occurs, the test cases verify **when** it occurs, **when** it recovers, and **whether it is erased according to specification**.
+### 3) `BRK.can`
+브레이크/가속/차속 입력을 송신하는 CAPL 노드입니다.
 
----
+### 4) `ENG.can`
+점화 및 엔진 상태를 송신하는 CAPL 노드입니다.
 
-## Key Test Scenarios
+### 5) `STR.can`
+조향각 입력을 송신하는 CAPL 노드입니다.
 
-### 1. Battery Percent Low
-This scenario validates whether a battery low diagnostic is handled correctly depending on battery percentage.
-
-Main checks include:
-- Non-detection check at **16%**
-- Detection boundary check at **15%**
-- Detection limit check at **0%**
-- Non-healing check at **29%**
-- Healing boundary check at **30%**
-- Healing limit check at **100%**
-- DTC erase check after healing state and repeated **IGN Off → On** cycling
-
-### 2. Battery Charging Error
-This scenario validates whether a charging-related diagnostic is detected and cleared correctly depending on battery percentage and charging status.
-
-Main checks include:
-- Non-detection check at **79%** with charging status fault input
-- Detection boundary check at **80%**
-- Detection limit check at **100%**
-- Non-healing check at **79%** after fault recovery input
-- Healing boundary check at **80%**
-- Healing limit check at **100%**
-- DTC erase check after healing state and repeated **IGN Off → On** cycling
-
----
-
-## Test Architecture
-The test environment is structured to simulate external ECU inputs and validate diagnostic outputs in a black-box manner.
-
-### Input simulation modules
-The following CAPL modules generate cyclic CAN messages and update signal values through system variables:
-
-- `BMS.can` : battery-related inputs such as battery percent, charge status, and voltage
-- `BRK.can` : brake, accelerator, and vehicle speed inputs
-- `ENG.can` : ignition and engine state inputs
-- `STR.can` : steering angle input
-- `UDS.can` : diagnostic request messages such as fault status request and fault clear request
-
-### Test execution module
-- `tfs_IVS_Project.can`
-  - contains the main CAPL-based automated test logic
-  - defines helper functions such as DTC clear and fault status request
-  - executes timing-based validation for detection, healing, and erase requirements
-
-### CANoe project configuration
-- `IVS_Project.tse`
-- `IVS_Project.sttse`
-
-These files contain the CANoe test setup and execution environment.
-
----
-
-## Repository Structure
-```text
-IVS_BlackBoxTest/
-├─ BMS.can
-├─ BRK.can
-├─ ENG.can
-├─ STR.can
-├─ UDS.can
-├─ tfs_IVS_Project.can
-├─ IVS_Project.tse
-├─ IVS_Project.sttse
-├─ IVS_version_1.canencr
-└─ tfs_IVS_Project_report.vtestreport
+### 6) `UDS.can`
+fault status / clear, version request를 보내는 진단 요청 노드입니다.
