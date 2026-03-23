@@ -1,0 +1,41 @@
+﻿/*@!Encoding:65001*/
+
+includes
+{
+  
+}
+
+variables
+{
+  message STR_01_10ms testSTR01;
+  msTimer timer_10ms;
+}
+
+on timer timer_10ms
+{
+  output(testSTR01);
+  setTimer(timer_10ms, 10);
+}
+
+on start
+{
+  @sysvar_Steering_angle_en = 0;
+  testSTR01.Steering_angle.phys=0;
+  setTimer(timer_10ms, 10);
+}
+
+on sysvar sysvar_Steering_angle_en
+{
+  if(@this)
+    testSTR01.Steering_angle.phys=@sysvar_Steering_angle_val;
+  else
+    testSTR01.Steering_angle.phys=0;
+}
+
+on sysvar sysvar_Steering_angle_val
+{
+  if(@sysvar_Steering_angle_en)
+    testSTR01.Steering_angle.phys=@sysvar_Steering_angle_val;
+  else
+    testSTR01.Steering_angle.phys=0;
+}

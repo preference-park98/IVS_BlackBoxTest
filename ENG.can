@@ -1,0 +1,68 @@
+﻿/*@!Encoding:65001*/
+
+includes
+{
+  
+}
+
+variables
+{
+  message ENG_02_10ms testENG02;
+  message IGN_01_2ms testIGN01;
+  msTimer timer_10ms;
+  msTimer timer_2ms;
+}
+
+on timer timer_10ms
+{
+  output(testENG02);
+  setTimer(timer_10ms, 10);
+}
+
+on timer timer_2ms
+{
+  output(testIGN01);
+  setTimer(timer_2ms,2);
+}
+
+on start
+{
+  @sysvar_Ignition_sts_en = 0;
+  @sysvar_Engine_sts_en = 0;
+  testIGN01.Ignition_sts.phys=1;
+  testENG02.Engine_sts.phys=1;
+  setTimer(timer_10ms, 10);
+  setTimer(timer_2ms,2);
+}
+
+on sysvar sysvar_Ignition_sts_en
+{
+  if(@this)
+    testIGN01.Ignition_sts.phys=@sysvar_Ignition_sts_val;
+  else
+    testIGN01.Ignition_sts.phys=1;
+}
+
+on sysvar sysvar_Ignition_sts_val
+{
+  if(@sysvar_Ignition_sts_en)
+    testIGN01.Ignition_sts.phys=@sysvar_Ignition_sts_val;
+  else
+    testIGN01.Ignition_sts.phys=1;
+}
+
+on sysvar sysvar_Engine_sts_en
+{
+  if(@this)
+    testENG02.Engine_sts.phys=@sysvar_Engine_sts_val;
+  else
+    testENG02.Engine_sts.phys=1;
+}
+
+on sysvar sysvar_Engine_sts_val
+{
+  if(@sysvar_Engine_sts_en)
+    testENG02.Engine_sts.phys=@sysvar_Engine_sts_val;
+  else
+    testENG02.Engine_sts.phys=1;
+}

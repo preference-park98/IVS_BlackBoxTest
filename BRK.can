@@ -1,0 +1,77 @@
+﻿/*@!Encoding:65001*/
+
+includes
+{
+  
+}
+
+variables
+{
+  message BRK_01_10ms testBRK01;
+  msTimer timer_10ms;
+}
+
+on timer timer_10ms
+{
+  output(testBRK01);
+  setTimer(timer_10ms, 10);
+}
+
+on start
+{
+  @sysvar_Brake_press_en = 0;
+  @sysvar_ACCEL_press_en = 0;
+  @sysvar_Vehicle_Speed_en = 0;
+  testBRK01.Brake_press.phys=0;
+  testBRK01.ACCEL_press.phys=0;
+  testBRK01.Vehicle_Speed.phys = 0;
+  setTimer(timer_10ms, 10);
+}
+
+on sysvar sysvar_Brake_press_en
+{
+  if(@this)
+    testBRK01.Brake_press.phys=@sysvar_Brake_press_val;
+  else
+    testBRK01.Brake_press.phys=0;
+}
+
+on sysvar sysvar_Brake_press_val
+{
+  if(@sysvar_Brake_press_en)
+    testBRK01.Brake_press.phys=@sysvar_Brake_press_val;
+  else
+    testBRK01.Brake_press.phys=0;
+}
+
+on sysvar sysvar_ACCEL_press_en
+{
+  if(@this)
+    testBRK01.ACCEL_press.phys=@sysvar_ACCEL_press_val;
+  else
+    testBRK01.ACCEL_press.phys=0;
+}
+
+on sysvar sysvar_ACCEL_press_val
+{
+  if(@sysvar_ACCEL_press_en)
+    testBRK01.ACCEL_press.phys=@sysvar_ACCEL_press_val;
+  else
+    testBRK01.ACCEL_press.phys=0;
+}
+
+on sysvar sysvar_Vehicle_Speed_en
+{
+  if(@this)
+    testBRK01.Vehicle_Speed.phys=@sysvar_Vehicle_Speed_val;
+  else
+    testBRK01.Vehicle_Speed.phys=0;
+}
+
+on sysvar sysvar_Vehicle_Speed_val
+{
+  if(@sysvar_Vehicle_Speed_en)
+    testBRK01.Vehicle_Speed.phys=@sysvar_Vehicle_Speed_val;
+  else
+    testBRK01.Vehicle_Speed.phys=0;
+}

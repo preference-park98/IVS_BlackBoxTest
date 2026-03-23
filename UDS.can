@@ -1,0 +1,46 @@
+﻿/*@!Encoding:65001*/
+includes
+{
+  
+}
+
+variables
+{
+  message Fault_sts_Req testFaultstsReq;
+  message IVS_Version_Req testIVSVersionReq;
+}
+
+on start
+{
+  @sysvar_IVS_Version_Req_en = 0;
+  @sysvar_Fault_sts_Req_en = 0;
+  testIVSVersionReq.Software_Version_Request.phys = 1;
+  testFaultstsReq.All_Fault_sts_request.phys = 0;
+  testFaultstsReq.All_Fault_clr_request.phys=0;
+}
+
+on sysvar sysvar_IVS_Version_Req_en
+{
+  if(@this)
+  {
+    testIVSVersionReq.Software_Version_Request.phys=@sysvar_Software_Version_Request_val;
+    output(testIVSVersionReq);
+  }
+  else
+    testIVSVersionReq.Software_Version_Request.phys=0;
+}
+
+on sysvar sysvar_Fault_sts_Req_en
+{
+  if(@this)
+  {
+    testFaultstsReq.All_Fault_sts_request.phys=@sysvar_All_Fault_sts_request_val;
+    testFaultstsReq.All_Fault_clr_request.phys=@sysvar_All_Fault_clr_request_val;
+    output(testFaultstsReq);
+  }
+  else
+  {
+    testFaultstsReq.All_Fault_sts_request.phys=0;
+    testFaultstsReq.All_Fault_clr_request.phys = 0;
+  }
+}

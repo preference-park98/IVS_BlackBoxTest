@@ -1,0 +1,76 @@
+﻿/*@!Encoding:65001*/
+includes
+{
+  
+}
+
+variables
+{
+  message BATT_01_10ms testBATT01;
+  msTimer timer_10ms;
+}
+
+on timer timer_10ms
+{
+  output(testBATT01);
+  setTimer(timer_10ms, 10);
+}
+
+on start
+{
+  @sysvar_Batt_Percent_en =0;
+  @sysvar_Batt_Chg_Sts_en =0;
+  @sysvar_Batt_Voltage_en =0;
+  testBATT01.Batt_Percent.phys=50;
+  testBATT01.Batt_Chg_Sts.phys=0;
+  testBATT01.Batt_Voltage.phys=12;
+  setTimer(timer_10ms, 10);
+}
+
+on sysvar sysvar_Batt_Percent_en
+{
+  if(@this)
+    testBATT01.Batt_Percent.phys=@sysvar_Batt_Percent_val;
+  else
+    testBATT01.Batt_Percent.phys=50;
+}
+
+on sysvar sysvar_Batt_Chg_Sts_en
+{
+  if(@this)
+    testBATT01.Batt_Chg_Sts.phys=@sysvar_Batt_Chg_Sts_val;
+  else
+    testBATT01.Batt_Chg_Sts.phys=0;
+}
+
+on sysvar sysvar_Batt_Voltage_en
+{
+  if(@this)
+    testBATT01.Batt_Voltage.phys=@sysvar_Batt_Voltage_val;
+  else
+    testBATT01.Batt_Voltage.phys=12;
+}
+
+on sysvar sysvar_Batt_Voltage_val
+{
+   if(@sysvar_Batt_Voltage_en)
+    testBATT01.Batt_Voltage.phys=@sysvar_Batt_Voltage_val;
+  else
+    testBATT01.Batt_Voltage.phys=12;
+}
+
+on sysvar sysvar_Batt_Chg_Sts_val
+{
+   if(@sysvar_Batt_Chg_Sts_en)
+    testBATT01.Batt_Chg_Sts.phys=@sysvar_Batt_Chg_Sts_val;
+  else
+    testBATT01.Batt_Chg_Sts.phys=0;
+}
+
+on sysvar sysvar_Batt_Percent_val
+{
+   if(@sysvar_Batt_Percent_en)
+    testBATT01.Batt_Percent.phys=@sysvar_Batt_Percent_val;
+  else
+    testBATT01.Batt_Percent.phys=50;
+}

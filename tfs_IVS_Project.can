@@ -1,0 +1,1528 @@
+﻿/*@!Encoding:65001*/
+includes
+{
+}
+
+variables
+{
+  message Fault_sts_Req Fault_Req_msg;
+}
+
+// --------------------------------------------------------------------------------------------
+// Helper Functions
+// --------------------------------------------------------------------------------------------
+
+void DTC_Clr(void)
+{
+  @sysvar_All_Fault_clr_request_val = 1;
+  @sysvar_Fault_sts_Req_en = 1;
+  testWaitForMessage(Fault_sts_Req, 10);
+  @sysvar_All_Fault_clr_request_val = 0;
+  @sysvar_Fault_sts_Req_en = 0;
+}
+
+void Fault_Req(void)
+{
+  @sysvar_All_Fault_sts_request_val = 1;
+  @sysvar_Fault_sts_Req_en = 1;
+  testWaitForMessage(Fault_sts_Req, 10);
+  @sysvar_All_Fault_sts_request_val = 0;
+  @sysvar_Fault_sts_Req_en = 0;
+}
+
+void MainTest ()
+{
+  Battery_Charging_Error();
+}
+
+testcase Battery_Percent_Low()
+{
+  int isDetect = 0;
+  int cycleCnt = 0;
+  int isErased = 0;
+ 
+  // ============================================================================================
+  // [1] Non-Detection Check (16%)
+  // ============================================================================================
+  isDetect=0;
+  teststep("[Non-Detection Check]", "Verify no fault detection at Batt_Percent = 16%%");
+
+  // Precondition Check
+  testStep("Precondition", "Start precondition check");
+
+  if(getSignal(IGN_01_2ms::Ignition_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+
+  if(getSignal(ENG_02_10ms::Engine_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "Precondition completed after DTC clear");
+
+  // Fault Injection
+  teststep("Fault Injection", "Apply normal condition: Batt_Percent = 16%%");
+  @sysvar_Batt_Percent_val = 16;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait until monitoring time (5100 ms)");
+  testWaitForTimeout(5100);
+
+  testStep("Action", "Request fault status at 5100 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 2)
+    {
+      testStepFail("Non-Detection", "FAIL: Fault detected at Batt_Percent = 16%% (should not be detected).");
+    }
+    else
+    {
+      testStepPass("Non-Detection", "PASS: No fault detected at Batt_Percent = 16%%.");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request.");
+  }
+  
+  // ============================================================================================
+  // [2] Detection Boundary Check (15%)
+  // ============================================================================================
+  isDetect=0;
+  teststep("[Detection Boundary Check]", "Verify detection timing at Batt_Percent = 15%%");
+  
+  // Precondition Check
+  testStep("Precondition", "Start precondition check");
+  
+  if(getSignal(IGN_01_2ms::Ignition_sts)!=1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+  
+  if(getSignal(ENG_02_10ms::Engine_sts)!=1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+  
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "Precondition completed after DTC clear");
+  
+  // Fault Injection
+  teststep("Fault Injection", "Apply fault condition: Batt_Percent = 15%%");
+  @sysvar_Batt_Percent_val = 15;
+  @sysvar_Batt_Percent_en = 1;
+  
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+  
+  testStep("Wait", "Wait until detection lower bound (4900 ms)");
+  testWaitForTimeout(4900);
+  
+  testStep("Action", "Request fault status at 4900 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if((getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 2))
+    {
+      testStepFail("Detection", "FAIL: Fault detected earlier than 4900 ms (too early).");
+      isDetect = 1;
+    }
+    else 
+    {
+      testStepPass("Detection", "PASS: No fault detected at 4900 ms (within expected range).");
+    }
+  }
+
+  testStep("Wait", "Wait additional 200 ms up to detection upper bound (5100 ms)");
+  testWaitForTimeout(200);
+
+  testStep("Action", "Request fault status at 5100 ms");
+  Fault_Req();
+  if((testWaitForMessage(Fault_sts_Rsp, 10) == 1) && isDetect == 0)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 2)
+    {
+      testStepPass("Detection", "PASS: Fault detected within 5100 ms (5000 ms ± 100 ms satisfied).");
+    }
+    else
+    {
+      testStepFail("Detection", "FAIL: Fault not detected by 5100 ms (detection delay).");
+    }
+  }
+  
+
+  
+  // ============================================================================================
+  // [3] Detection Limit Check (0%)
+  // ============================================================================================
+  isDetect = 0;
+  teststep("[Detection Limit Check]", "Verify detection timing at Batt_Percent = 0%%");
+  
+  testStep("Precondition", "Start precondition re-check");
+  
+  if(getSignal(IGN_01_2ms::Ignition_sts)!=1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+  
+  if(getSignal(ENG_02_10ms::Engine_sts)!=1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+  
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "Precondition completed after DTC clear");
+  
+  // Fault Injection
+  teststep("Fault Injection", "Apply fault condition: Batt_Percent = 0%%");
+  @sysvar_Batt_Percent_val = 0;
+  @sysvar_Batt_Percent_en = 1;
+  
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+  
+  testStep("Wait", "Wait until detection lower bound (4900 ms)");
+  testWaitForTimeout(4900);
+  
+  testStep("Action", "Request fault status at 4900 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if((getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 2))
+    {
+      testStepFail("Detection", "FAIL: Fault detected earlier than 4900 ms (too early).");
+      isDetect = 1;
+    }
+    else 
+    {
+      testStepPass("Detection", "PASS: No fault detected at 4900 ms (within expected range).");
+    }
+  }
+
+  testStep("Wait", "Wait additional 200 ms up to detection upper bound (5100 ms)");
+  testWaitForTimeout(200);
+
+  testStep("Action", "Request fault status at 5100 ms");
+  Fault_Req();
+  if((testWaitForMessage(Fault_sts_Rsp, 10) == 1) && isDetect == 0)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 2)
+    {
+      testStepPass("Detection", "PASS: Fault detected within 5100 ms (5000 ms ± 100 ms satisfied).");
+    }
+    else
+    {
+      testStepFail("Detection", "FAIL: Fault not detected by 5100 ms (detection delay).");
+    }
+  }
+  
+   // ============================================================================================
+  // [4] Non-Healing Check (29%)
+  // ============================================================================================
+  teststep("[Non-Healing Check]", "Verify no healing at Batt_Percent = 29%%");
+
+  testStep("Precondition", "Start precondition check");
+
+  if(getSignal(IGN_01_2ms::Ignition_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+
+  if(getSignal(ENG_02_10ms::Engine_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: DTC clear completed.");
+
+  teststep("Fault Injection", "Apply fault condition: Batt_Percent = 7%%");
+  @sysvar_Batt_Percent_val = 7;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait for fault detection completion (5100 ms)");
+  testWaitForTimeout(5100);
+
+  testStep("Action", "Request fault status after 7%% injection");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) != 2)
+    {
+      testStepFail("Precondition", "FAIL: Fault level 2 not established at Batt_Percent = 7%%.");
+      return;
+    }
+    else
+      testStepPass("Precondition", "PASS: Fault level 2 established at Batt_Percent = 7%%.");
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: No response received for fault status request.");
+    return;
+  }
+
+  testStepPass("Precondition", "Precondition completed");
+
+  teststep("Condition Injection", "Apply non-healing condition: Batt_Percent = 29%%");
+  @sysvar_Batt_Percent_val = 29;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait until healing lower bound (90 ms)");
+  testWaitForTimeout(90);
+
+  testStep("Action", "Request fault status at 90 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 1)
+    {
+      testStepFail("Non-Healing", "FAIL: Fault healed at 90 ms for Batt_Percent = 29%%.");
+      return;
+    }
+    else
+    {
+      testStepPass("Non-Healing", "PASS: No healing at 90 ms.");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 90 ms.");
+    return;
+  }
+
+  testStep("Wait", "Wait additional 20 ms up to healing upper bound (110 ms)");
+  testWaitForTimeout(20);
+
+  testStep("Action", "Request fault status at 110 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 1)
+    {
+      testStepFail("Non-Healing", "FAIL: Fault healed at 110 ms for Batt_Percent = 29%% (should not be healed).");
+    }
+    else
+    {
+      testStepPass("Non-Healing", "PASS: No healing at 110 ms for Batt_Percent = 29%%.");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 110 ms.");
+    return;
+  }
+
+
+  // ============================================================================================
+  // [5] Healing Boundary Check (30%)
+  // ============================================================================================
+  isDetect = 0;
+  teststep("[Healing Boundary Check]", "Verify healing timing at Batt_Percent = 30%%");
+
+  testStep("Precondition", "Start precondition check");
+
+  if(getSignal(IGN_01_2ms::Ignition_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+
+  if(getSignal(ENG_02_10ms::Engine_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: DTC clear completed.");
+
+  teststep("Fault Injection", "Apply fault condition: Batt_Percent = 7%%");
+  @sysvar_Batt_Percent_val = 7;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait for fault detection completion (5100 ms)");
+  testWaitForTimeout(5100);
+
+  testStep("Action", "Request fault status after 7%% injection");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) != 2)
+    {
+      testStepFail("Precondition", "FAIL: Fault level 2 not established at Batt_Percent = 7%%.");
+      return;
+    }
+    else
+      testStepPass("Precondition", "PASS: Fault level 2 established at Batt_Percent = 7%%.");
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: No response received for fault status request.");
+    return;
+  }
+
+  testStepPass("Precondition", "Precondition completed");
+
+  teststep("Healing Injection", "Apply healing condition: Batt_Percent = 30%%");
+  @sysvar_Batt_Percent_val = 30;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait until healing lower bound (90 ms)");
+  testWaitForTimeout(90);
+
+  testStep("Action", "Request fault status at 90 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 1)
+    {
+      testStepFail("Healing", "FAIL: Fault healed earlier than 90 ms (too early).");
+      isDetect = 1;
+    }
+    else
+    {
+      testStepPass("Healing", "PASS: No healing at 90 ms (within expected range).");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 90 ms.");
+    return;
+  }
+
+  testStep("Wait", "Wait additional 20 ms up to healing upper bound (110 ms)");
+  testWaitForTimeout(20);
+
+  testStep("Action", "Request fault status at 110 ms");
+  Fault_Req();
+  if((testWaitForMessage(Fault_sts_Rsp, 10) == 1) && isDetect == 0)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 1)
+    {
+      testStepPass("Healing", "PASS: Healing completed within 110 ms (100 ms ± 10 ms satisfied).");
+    }
+    else
+    {
+      testStepFail("Healing", "FAIL: Healing not completed by 110 ms (healing delay).");
+    }
+  }
+  else if(isDetect == 0)
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 110 ms.");
+    return;
+  }
+  
+    // ============================================================================================
+  // [6] Healing Limit Check (100%)
+  // ============================================================================================
+  isDetect = 0;
+  teststep("[Healing Limit Check]", "Verify healing timing at Batt_Percent = 100%%");
+
+  testStep("Precondition", "Start precondition check");
+
+  if(getSignal(IGN_01_2ms::Ignition_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+
+  if(getSignal(ENG_02_10ms::Engine_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: DTC clear completed.");
+
+  teststep("Fault Injection", "Apply fault condition: Batt_Percent = 7%%");
+  @sysvar_Batt_Percent_val = 7;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait for fault detection completion (5100 ms)");
+  testWaitForTimeout(5100);
+
+  testStep("Action", "Request fault status after 7%% injection");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) != 2)
+    {
+      testStepFail("Precondition", "FAIL: Fault level 2 not established at Batt_Percent = 7%%.");
+      return;
+    }
+    else
+      testStepPass("Precondition", "PASS: Fault level 2 established at Batt_Percent = 7%%.");
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: No response received for fault status request.");
+    return;
+  }
+
+  testStepPass("Precondition", "Precondition completed");
+
+  teststep("Healing Injection", "Apply healing condition: Batt_Percent = 100%%");
+  @sysvar_Batt_Percent_val = 100;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait until healing lower bound (90 ms)");
+  testWaitForTimeout(90);
+
+  testStep("Action", "Request fault status at 90 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 1)
+    {
+      testStepFail("Healing", "FAIL: Fault healed earlier than 90 ms (too early).");
+      isDetect = 1;
+    }
+    else
+    {
+      testStepPass("Healing", "PASS: No healing at 90 ms (within expected range).");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 90 ms.");
+    return;
+  }
+
+  testStep("Wait", "Wait additional 20 ms up to healing upper bound (110 ms)");
+  testWaitForTimeout(20);
+
+  testStep("Action", "Request fault status at 110 ms");
+  Fault_Req();
+  if((testWaitForMessage(Fault_sts_Rsp, 10) == 1) && isDetect == 0)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 1)
+    {
+      testStepPass("Healing", "PASS: Healing completed within 110 ms (100 ms ± 10 ms satisfied).");
+    }
+    else
+    {
+      testStepFail("Healing", "FAIL: Healing not completed by 110 ms (healing delay).");
+    }
+  }
+  else if(isDetect == 0)
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 110 ms.");
+    return;
+  }
+  
+  // ============================================================================================
+  // [7] DTC Erase Check by IGN Off -> On Cycling
+  // ============================================================================================
+  isErased = 0;
+  teststep("[Healing State Preparation]", "Establish healing state before DTC erase check");
+
+  // Precondition Check
+  testStep("Precondition", "Start precondition check");
+
+  if(getSignal(IGN_01_2ms::Ignition_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+
+  if(getSignal(ENG_02_10ms::Engine_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+
+  teststep("Healing Injection", "Apply healing condition: Batt_Percent = 65%%");
+  @sysvar_Batt_Percent_val = 65;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait until healing upper bound (110 ms)");
+  testWaitForTimeout(110);
+
+  testStep("Action", "Request fault status after healing condition");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) != 1)
+    {
+      testStepFail("Precondition", "FAIL: Target DTC is not in healing state before IGN cycling.");
+      return;
+    }
+    else
+    {
+      testStepPass("Precondition", "PASS: Target DTC is in healing state.");
+    }
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: Fault status response was not received.");
+    return;
+  }
+
+  testStepPass("Precondition", "Precondition completed");
+  
+  testWaitForTimeout(10);
+
+  teststep("[DTC Erase Check]", "Verify DTC erase condition by 50 IGN Off -> On cycles");
+
+  // IGN Cycle Loop
+  for(cycleCnt = 1; cycleCnt <= 50; cycleCnt++)
+  {
+    teststep("[IGN Cycle]", "Execute IGN Off -> On cycle %d / 50", cycleCnt);
+
+    // IGN OFF
+    testStep("Action", "Set IGN to OFF");
+    @sysvar_Ignition_sts_val = 0;
+    @sysvar_Ignition_sts_en = 1;
+
+    testStep("Wait", "Wait for IGN OFF stabilization");
+    testWaitForTimeout(10);
+
+    // IGN ON
+    testStep("Action", "Set IGN to ON");
+    @sysvar_Ignition_sts_val = 1;
+    @sysvar_Ignition_sts_en = 1;
+
+    testStep("Wait", "Wait for IGN ON stabilization");
+    testWaitForTimeout(10);
+
+    // DTC Status Check after each cycle
+    testStep("Action", "Request fault status after IGN cycle %d", cycleCnt);
+    Fault_Req();
+
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if((cycleCnt < 50) && (getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 0))
+      {
+        testStepFail("Erase Check", "FAIL: Target DTC was cleared too early at cycle %d.", cycleCnt);
+        return;
+      }
+      else if((cycleCnt < 50) && (getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 1))
+      {
+        testStepPass("Erase Check", "PASS: Target DTC is still in healing state after cycle %d.", cycleCnt);
+      }
+      else if((cycleCnt == 50) && (getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) == 0))
+      {
+        testStepPass("Erase Check", "PASS: Target DTC was cleared at cycle 50.");
+        isErased = 1;
+      }
+      else if((cycleCnt == 50) && (getSignal(Fault_sts_Rsp::BATT_Percent_Err_sts) != 0))
+      {
+        testStepFail("Erase Check", "FAIL: Target DTC was not cleared at cycle 50.");
+      }
+    }
+    else
+    {
+      testStepFail("Erase Check", "FAIL: Fault status response was not received at cycle %d.", cycleCnt);
+      return;
+    }
+  }
+
+  // Final Result
+  if(isErased == 1)
+  {
+    testStepPass("Final", "PASS: Target DTC was cleared exactly at cycle 50.");
+  }
+  else
+  {
+    testStepFail("Final", "FAIL: Target DTC erase condition for 50 IGN Off -> On cycles was not satisfied.");
+  }
+
+  // Cleanup
+  teststep("[Cleanup]", "Reset all used enable system variables to 0");
+  @sysvar_Batt_Percent_en = 0;
+  @sysvar_Ignition_sts_en = 0;
+  @sysvar_All_Fault_clr_request_val = 0;
+  @sysvar_All_Fault_sts_request_val = 0;
+  @sysvar_Fault_sts_Req_en = 0;
+}
+
+testcase Battery_Charging_Error()
+{
+  int isDetect = 0;
+  int cycleCnt = 0;
+  int isErased = 0;
+  int tcFail = 0;
+  int stepFail = 0;
+
+  // ============================================================================================
+  // Battery Charging Error Test
+  // ============================================================================================
+  teststep("[Precondition Setup]", "Set common preconditions for Battery Charging Error test");
+
+  if(getSignal(IGN_01_2ms::Ignition_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Ignition status is OFF.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Ignition status is ON.");
+
+  if(getSignal(ENG_02_10ms::Engine_sts) != 1)
+  {
+    testStepFail("Precondition", "FAIL: Engine status is not RUNNING.");
+    return;
+  }
+  else
+    testStepPass("Precondition", "PASS: Engine status is RUNNING.");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: Common precondition completed.");
+
+
+  // ============================================================================================
+  // Non-Detection Check (79%)
+  // ============================================================================================
+  isDetect = 0;
+  stepFail = 0;
+  teststep("[Non-Detection Check]", "Verify no fault detection at Batt_Percent = 79%% with Batt_Chg_Sts = 1");
+
+  testStep("Action", "Reset charging state to normal before non-detection check");
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Set Battery Percent to 79%%");
+  @sysvar_Batt_Percent_val = 79;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Action", "Apply fault condition: Batt_Chg_Sts = 1");
+  @sysvar_Batt_Chg_Sts_val = 1;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+
+  testStep("Wait", "Wait until detection lower bound (4900 ms)");
+  testWaitForTimeout(4900);
+  
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Request fault status at 4900 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 2)
+    {
+      testStepFail("Non-Detection", "FAIL: Fault detected earlier than 4900 ms at Batt_Percent = 79%%.");
+      isDetect = 1;
+      stepFail = 1;
+      tcFail = 1;
+    }
+    else
+    {
+      testStepPass("Non-Detection", "PASS: No fault detected at 4900 ms.");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 4900 ms.");
+    stepFail = 1;
+    tcFail = 1;
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Wait", "Wait additional 200 ms up to detection upper bound (5100 ms)");
+    testWaitForTimeout(100);
+
+    testStep("Action", "Request fault status at 5100 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 2)
+      {
+        testStepFail("Non-Detection", "FAIL: Fault detected by 5100 ms at Batt_Percent = 79%% (should not be detected).");
+        tcFail = 1;
+      }
+      else
+      {
+        testStepPass("Non-Detection", "PASS: No fault detected by 5100 ms at Batt_Percent = 79%%.");
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 5100 ms.");
+      tcFail = 1;
+    }
+  }
+
+
+  // ============================================================================================
+  // Detection Boundary Check (80%)
+  // ============================================================================================
+  isDetect = 0;
+  stepFail = 0;
+  teststep("[Detection Boundary Check]", "Verify detection timing at Batt_Percent = 80%% with Batt_Chg_Sts = 1");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Detection", "PASS: DTC clear completed.");
+
+  testStep("Action", "Reset charging state to normal before detection boundary check");
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Set Battery Percent to 80%%");
+  @sysvar_Batt_Percent_val = 80;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Action", "Apply fault condition: Batt_Chg_Sts = 1");
+  @sysvar_Batt_Chg_Sts_val = 1;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait until detection lower bound (4900 ms)");
+  testWaitForTimeout(4900);
+
+  testStep("Action", "Request fault status at 4900 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 2)
+    {
+      testStepFail("Detection", "FAIL: Fault detected earlier than 4900 ms (too early).");
+      isDetect = 1;
+      stepFail = 1;
+      tcFail = 1;
+    }
+    else
+    {
+      testStepPass("Detection", "PASS: No fault detected at 4900 ms (within expected range).");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 4900 ms.");
+    stepFail = 1;
+    tcFail = 1;
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Wait", "Wait additional 200 ms up to detection upper bound (5100 ms)");
+    testWaitForTimeout(100);
+
+    testStep("Action", "Request fault status at 5100 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 2)
+      {
+        testStepPass("Detection", "PASS: Fault detected within 5100 ms (5000 ms ± 100 ms satisfied).");
+      }
+      else
+      {
+        testStepFail("Detection", "FAIL: Fault not detected by 5100 ms (detection delay).");
+        tcFail = 1;
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 5100 ms.");
+      tcFail = 1;
+    }
+  }
+
+
+  // ============================================================================================
+  // Detection Limit Check (100%)
+  // ============================================================================================
+  isDetect = 0;
+  stepFail = 0;
+  teststep("[Detection Limit Check]", "Verify detection timing at Batt_Percent = 100%% with Batt_Chg_Sts = 1");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Detection", "PASS: DTC clear completed.");
+
+  testStep("Action", "Reset charging state to normal before detection limit check");
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Set Battery Percent to 100%%");
+  @sysvar_Batt_Percent_val = 100;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Action", "Apply fault condition: Batt_Chg_Sts = 1");
+  @sysvar_Batt_Chg_Sts_val = 1;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait until detection lower bound (4900 ms)");
+  testWaitForTimeout(4900);
+
+  testStep("Action", "Request fault status at 4900 ms");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 2)
+    {
+      testStepFail("Detection", "FAIL: Fault detected earlier than 4900 ms at Batt_Percent = 100%%.");
+      isDetect = 1;
+      stepFail = 1;
+      tcFail = 1;
+    }
+    else
+    {
+      testStepPass("Detection", "PASS: No fault detected at 4900 ms (within expected range).");
+    }
+  }
+  else
+  {
+    testStepFail("Response", "FAIL: No response received for fault status request at 4900 ms.");
+    stepFail = 1;
+    tcFail = 1;
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Wait", "Wait additional 200 ms up to detection upper bound (5100 ms)");
+    testWaitForTimeout(100);
+
+    testStep("Action", "Request fault status at 5100 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 2)
+      {
+        testStepPass("Detection", "PASS: Fault detected within 5100 ms at Batt_Percent = 100%%.");
+      }
+      else
+      {
+        testStepFail("Detection", "FAIL: Fault not detected by 5100 ms at Batt_Percent = 100%%.");
+        tcFail = 1;
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 5100 ms.");
+      tcFail = 1;
+    }
+  }
+
+
+  // ============================================================================================
+  // Non-Healing Check (79%)
+  // ============================================================================================
+  isDetect = 0;
+  stepFail = 0;
+  teststep("[Non-Healing Check]", "Verify no healing at Batt_Percent = 79%% with Batt_Chg_Sts = 0");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: DTC clear completed.");
+
+  testStep("Action", "Reset charging state to normal before fault establishment");
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Set Battery Percent to 90%% for fault establishment");
+  @sysvar_Batt_Percent_val = 90;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Action", "Apply fault condition: Batt_Chg_Sts = 1");
+  @sysvar_Batt_Chg_Sts_val = 1;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait for fault detection completion (5100 ms)");
+  testWaitForTimeout(5000);
+
+  testStep("Action", "Request fault status after fault establishment");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) != 2)
+    {
+      testStepFail("Precondition", "FAIL: Fault level 2 not established at Batt_Percent = 90%%.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+    else
+      testStepPass("Precondition", "PASS: Fault level 2 established at Batt_Percent = 90%%.");
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: No response received for fault status request.");
+    stepFail = 1;
+    tcFail = 1;
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Action", "Set Battery Percent to 79%% for non-healing check");
+    @sysvar_Batt_Percent_val = 79;
+    @sysvar_Batt_Percent_en = 1;
+
+    testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Action", "Apply healing condition: Batt_Chg_Sts = 0");
+    @sysvar_Batt_Chg_Sts_val = 0;
+    @sysvar_Batt_Chg_Sts_en = 1;
+
+    testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Wait", "Wait until healing lower bound (90 ms)");
+    testWaitForTimeout(90);
+
+    testStep("Action", "Request fault status at 90 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 1)
+      {
+        testStepFail("Non-Healing", "FAIL: Fault healed earlier than 90 ms at Batt_Percent = 79%%.");
+        isDetect = 1;
+        stepFail = 1;
+        tcFail = 1;
+      }
+      else
+      {
+        testStepPass("Non-Healing", "PASS: No healing at 90 ms.");
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 90 ms.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Wait", "Wait additional 20 ms up to healing upper bound (110 ms)");
+    testWaitForTimeout(10);
+
+    testStep("Action", "Request fault status at 110 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 1)
+      {
+        testStepFail("Non-Healing", "FAIL: Fault healed by 110 ms at Batt_Percent = 79%% (should not be healed).");
+        tcFail = 1;
+      }
+      else
+      {
+        testStepPass("Non-Healing", "PASS: No healing by 110 ms at Batt_Percent = 79%%.");
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 110 ms.");
+      tcFail = 1;
+    }
+  }
+
+
+  // ============================================================================================
+  // Healing Boundary Check (80%)
+  // ============================================================================================
+  isDetect = 0;
+  stepFail = 0;
+  teststep("[Healing Boundary Check]", "Verify healing timing at Batt_Percent = 80%% with Batt_Chg_Sts = 0");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: DTC clear completed.");
+
+  testStep("Action", "Reset charging state to normal before fault establishment");
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Set Battery Percent to 90%% for fault establishment");
+  @sysvar_Batt_Percent_val = 90;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Action", "Apply fault condition: Batt_Chg_Sts = 1");
+  @sysvar_Batt_Chg_Sts_val = 1;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait for fault detection completion (5100 ms)");
+  testWaitForTimeout(5000);
+
+  testStep("Action", "Request fault status after fault establishment");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) != 2)
+    {
+      testStepFail("Precondition", "FAIL: Fault level 2 not established at Batt_Percent = 90%%.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+    else
+      testStepPass("Precondition", "PASS: Fault level 2 established at Batt_Percent = 90%%.");
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: No response received for fault status request.");
+    stepFail = 1;
+    tcFail = 1;
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Action", "Set Battery Percent to 80%% for healing boundary check");
+    @sysvar_Batt_Percent_val = 80;
+    @sysvar_Batt_Percent_en = 1;
+
+    testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Action", "Apply healing condition: Batt_Chg_Sts = 0");
+    @sysvar_Batt_Chg_Sts_val = 0;
+    @sysvar_Batt_Chg_Sts_en = 1;
+
+    testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Wait", "Wait until healing lower bound (90 ms)");
+    testWaitForTimeout(90);
+
+    testStep("Action", "Request fault status at 90 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 1)
+      {
+        testStepFail("Healing", "FAIL: Fault healed earlier than 90 ms (too early).");
+        isDetect = 1;
+        stepFail = 1;
+        tcFail = 1;
+      }
+      else
+      {
+        testStepPass("Healing", "PASS: No healing at 90 ms (within expected range).");
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 90 ms.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Wait", "Wait additional 20 ms up to healing upper bound (110 ms)");
+    testWaitForTimeout(10);
+
+    testStep("Action", "Request fault status at 110 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 1)
+      {
+        testStepPass("Healing", "PASS: Healing completed within 110 ms (100 ms ± 10 ms satisfied).");
+      }
+      else
+      {
+        testStepFail("Healing", "FAIL: Healing not completed by 110 ms (healing delay).");
+        tcFail = 1;
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 110 ms.");
+      tcFail = 1;
+    }
+  }
+
+
+  // ============================================================================================
+  // Healing Limit Check (100%)
+  // ============================================================================================
+  isDetect = 0;
+  stepFail = 0;
+  teststep("[Healing Limit Check]", "Verify healing timing at Batt_Percent = 100%% with Batt_Chg_Sts = 0");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: DTC clear completed.");
+
+  testStep("Action", "Reset charging state to normal before fault establishment");
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Set Battery Percent to 90%% for fault establishment");
+  @sysvar_Batt_Percent_val = 90;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Action", "Apply fault condition: Batt_Chg_Sts = 1");
+  @sysvar_Batt_Chg_Sts_val = 1;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait for fault detection completion (5100 ms)");
+  testWaitForTimeout(5000);
+
+  testStep("Action", "Request fault status after fault establishment");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) != 2)
+    {
+      testStepFail("Precondition", "FAIL: Fault level 2 not established at Batt_Percent = 90%%.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+    else
+      testStepPass("Precondition", "PASS: Fault level 2 established at Batt_Percent = 90%%.");
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: No response received for fault status request.");
+    stepFail = 1;
+    tcFail = 1;
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Action", "Set Battery Percent to 100%% for healing limit check");
+    @sysvar_Batt_Percent_val = 100;
+    @sysvar_Batt_Percent_en = 1;
+
+    testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Action", "Apply healing condition: Batt_Chg_Sts = 0");
+    @sysvar_Batt_Chg_Sts_val = 0;
+    @sysvar_Batt_Chg_Sts_en = 1;
+
+    testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Wait", "Wait until healing lower bound (90 ms)");
+    testWaitForTimeout(90);
+
+    testStep("Action", "Request fault status at 90 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 1)
+      {
+        testStepFail("Healing", "FAIL: Fault healed earlier than 90 ms at Batt_Percent = 100%%.");
+        isDetect = 1;
+        stepFail = 1;
+        tcFail = 1;
+      }
+      else
+      {
+        testStepPass("Healing", "PASS: No healing at 90 ms (within expected range).");
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 90 ms.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Wait", "Wait additional 20 ms up to healing upper bound (110 ms)");
+    testWaitForTimeout(10);
+
+    testStep("Action", "Request fault status at 110 ms");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 1)
+      {
+        testStepPass("Healing", "PASS: Healing completed within 110 ms at Batt_Percent = 100%%.");
+      }
+      else
+      {
+        testStepFail("Healing", "FAIL: Healing not completed by 110 ms at Batt_Percent = 100%%.");
+        tcFail = 1;
+      }
+    }
+    else
+    {
+      testStepFail("Response", "FAIL: No response received for fault status request at 110 ms.");
+      tcFail = 1;
+    }
+  }
+
+
+  // ============================================================================================
+  // DTC Erase Check
+  // ============================================================================================
+  isErased = 0;
+  stepFail = 0;
+  teststep("[DTC Erase Check]", "Verify DTC erase condition by 50 IGN Off -> On cycles");
+
+  testStep("Action", "Execute DTC clear request");
+  DTC_Clr();
+  testStepPass("Precondition", "PASS: DTC clear completed.");
+
+  testStep("Action", "Reset charging state to normal before fault establishment");
+  @sysvar_Batt_Chg_Sts_val = 0;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Action", "Set Battery Percent to 90%% for fault establishment");
+  @sysvar_Batt_Percent_val = 90;
+  @sysvar_Batt_Percent_en = 1;
+
+  testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Action", "Apply fault condition: Batt_Chg_Sts = 1");
+  @sysvar_Batt_Chg_Sts_val = 1;
+  @sysvar_Batt_Chg_Sts_en = 1;
+
+  testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+  testWaitForMessage(BATT_01_10ms, 10);
+
+  testStep("Wait", "Wait for fault detection completion (5100 ms)");
+  testWaitForTimeout(5100);
+
+  testStep("Action", "Request fault status after fault establishment");
+  Fault_Req();
+  if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+  {
+    if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) != 2)
+    {
+      testStepFail("Precondition", "FAIL: Fault level 2 not established at Batt_Percent = 90%%.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+    else
+      testStepPass("Precondition", "PASS: Fault level 2 established at Batt_Percent = 90%%.");
+  }
+  else
+  {
+    testStepFail("Precondition", "FAIL: No response received for fault status request.");
+    stepFail = 1;
+    tcFail = 1;
+  }
+
+  if(stepFail == 0)
+  {
+    testStep("Action", "Set Battery Percent to 90%% for erase check");
+    @sysvar_Batt_Percent_val = 90;
+    @sysvar_Batt_Percent_en = 1;
+
+    testStep("Wait", "Wait for message synchronization: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Action", "Apply healing condition: Batt_Chg_Sts = 0");
+    @sysvar_Batt_Chg_Sts_val = 0;
+    @sysvar_Batt_Chg_Sts_en = 1;
+
+    testStep("Wait", "Wait for message synchronization after Batt_Chg_Sts update: BATT_01_10ms");
+    testWaitForMessage(BATT_01_10ms, 10);
+
+    testStep("Wait", "Wait until healing upper bound (110 ms)");
+    testWaitForTimeout(110);
+
+    testStep("Action", "Request current fault status before IGN cycling");
+    Fault_Req();
+    if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+    {
+      if(getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) != 1)
+      {
+        testStepFail("Precondition", "FAIL: Target DTC is not in healing state before IGN cycling.");
+        stepFail = 1;
+        tcFail = 1;
+      }
+      else
+      {
+        testStepPass("Precondition", "PASS: Target DTC is in healing state.");
+      }
+    }
+    else
+    {
+      testStepFail("Precondition", "FAIL: Fault status response was not received.");
+      stepFail = 1;
+      tcFail = 1;
+    }
+  }
+
+  if(stepFail == 0)
+  {
+    for(cycleCnt = 1; cycleCnt <= 50; cycleCnt++)
+    {
+      teststep("[IGN Cycle]", "Execute IGN Off -> On cycle %d / 50", cycleCnt);
+
+      testStep("Action", "Set IGN to OFF");
+      @sysvar_Ignition_sts_val = 0;
+      @sysvar_Ignition_sts_en = 1;
+
+      testStep("Wait", "Wait for IGN OFF stabilization");
+      testWaitForTimeout(10);
+
+      testStep("Action", "Set IGN to ON");
+      @sysvar_Ignition_sts_val = 1;
+      @sysvar_Ignition_sts_en = 1;
+
+      testStep("Wait", "Wait for IGN ON stabilization");
+      testWaitForTimeout(10);
+
+      testStep("Action", "Request fault status after IGN cycle %d", cycleCnt);
+      Fault_Req();
+
+      if(testWaitForMessage(Fault_sts_Rsp, 10) == 1)
+      {
+        if((cycleCnt < 50) && (getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 0))
+        {
+          testStepFail("Erase Check", "FAIL: Target DTC was cleared too early at cycle %d.", cycleCnt);
+          tcFail = 1;
+          stepFail = 1;
+          break;
+        }
+        else if((cycleCnt < 50) && (getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 1))
+        {
+          testStepPass("Erase Check", "PASS: Target DTC is still in healing state after cycle %d.", cycleCnt);
+        }
+        else if((cycleCnt == 50) && (getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) == 0))
+        {
+          testStepPass("Erase Check", "PASS: Target DTC was cleared at cycle 50.");
+          isErased = 1;
+        }
+        else if((cycleCnt == 50) && (getSignal(Fault_sts_Rsp::BATT_Chg_Err_sts) != 0))
+        {
+          testStepFail("Erase Check", "FAIL: Target DTC was not cleared at cycle 50.");
+          tcFail = 1;
+        }
+      }
+      else
+      {
+        testStepFail("Erase Check", "FAIL: Fault status response was not received at cycle %d.", cycleCnt);
+        tcFail = 1;
+        stepFail = 1;
+        break;
+      }
+    }
+  }
+
+
+  // ============================================================================================
+  // Final Result
+  // ============================================================================================
+  if((tcFail == 0) && (isErased == 1))
+  {
+    testStepPass("Final", "PASS: All Battery Charging Error checks completed successfully.");
+  }
+  else
+  {
+    testStepFail("Final", "FAIL: One or more Battery Charging Error checks failed.");
+  }
+
+  // ============================================================================================
+  // Cleanup
+  // ============================================================================================
+  teststep("[Cleanup]", "Reset all used enable system variables to 0");
+  @sysvar_Batt_Percent_en = 0;
+  @sysvar_Batt_Chg_Sts_en = 0;
+  @sysvar_Ignition_sts_en = 0;
+  @sysvar_All_Fault_clr_request_val = 0;
+  @sysvar_All_Fault_sts_request_val = 0;
+  @sysvar_Fault_sts_Req_en = 0;
+}
